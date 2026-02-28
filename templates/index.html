@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Apple Hunter 4.5</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+
+/* ФОН СЛОЙ (исправляет черный экран Telegram) */
+.bg{
+position:fixed;
+width:100%;
+height:100%;
+z-index:-1;
+background:linear-gradient(180deg,#0b2540,#123d66,#1e6aa8);
+}
+
+body{
+font-family:'Arial Black',sans-serif;
+color:white;
+overflow:hidden;
+text-align:center;
+}
+
+/* ===== SCREENS ===== */
+.screen{
+position:fixed;
+width:100%;
+height:100%;
+display:none;
+flex-direction:column;
+align-items:center;
+justify-content:center;
+}
+.active{display:flex}
+
+/* ===== MENU ===== */
+.menu-tree{
+width:180px;
+margin-top:-50px;
+animation:float 3s infinite ease-in-out;
+}
+@keyframes float{
+0%{transform:translateY(0)}
+50%{transform:translateY(-18px)}
+100%{transform:translateY(0)}
+}
+
+.title{
+font-size:40px;
+margin:15px;
+text-shadow:3px 3px 0 #000;
+}
+
+.greet{
+margin-bottom:15px;
+color:#00ffcc;
+}
+
+/* КНОПКИ С АНИМАЦИЕЙ */
+button{
+padding:18px 90px;
+font-size:22px;
+font-weight:bold;
+border:none;
+border-radius:50px;
+background:#00ff88;
+margin:12px;
+cursor:pointer;
+animation:pulse 2s infinite;
+transition:0.15s;
+}
+
+@keyframes pulse{
+0%{box-shadow:0 0 15px #00ff88}
+50%{box-shadow:0 0 35px #00ff88}
+100%{box-shadow:0 0 15px #00ff88}
+}
+
+button:active{
+transform:scale(0.92);
+box-shadow:0 0 10px #00ff88;
+}
+
+.leaderboard{
+margin-top:20px;
+font-size:16px;
+line-height:1.6;
+}
+
+.version{position:absolute;bottom:35px;font-size:14px;opacity:0.7}
+.dev{position:absolute;bottom:15px;font-size:13px;opacity:0.6}
+
+/* ===== GAME ===== */
+#game{
+background:white;
+position:fixed;
+width:100%;
+height:100%;
+display:none;
+overflow:hidden;
+}
+
+#tree{
+position:absolute;
+bottom:-40px;
+left:50%;
+transform:translateX(-50%);
+width:140vw;
+}
+
+.apple,.bomb{
+position:absolute;
+font-size:45px;
+transition:transform 0.2s ease, opacity 0.2s ease;
+}
+
+.apple.pop{
+transform:scale(1.6);
+opacity:0;
+}
+
+#basket{
+position:absolute;
+bottom:25px;
+font-size:80px;
+left:50%;
+transform:translateX(-50%);
+}
+
+#hud{
+position:absolute;
+top:10px;
+width:100%;
+font-size:20px;
+font-weight:bold;
+color:black;
+}
+
+/* ===== RESULT ===== */
+#result{
+position:fixed;
+width:100%;
+height:100%;
+display:none;
+flex-direction:column;
+align-items:center;
+justify-content:center;
+gap:20px;
+}
+
+.result-text{
+font-size:30px;
+font-weight:bold;
+}
+</style>
+</head>
+
+<body>
+
+<div class="bg"></div>
+
+<!-- MENU -->
+<div id="menu" class="screen active">
+<img src="/static/images/tree.png" class="menu-tree">
+<div class="title">APPLE HUNTER</div>
+<div class="greet" id="greet"></div>
+
+<button onclick="startGame1()">GAME 1</button>
+<button onclick="startGame2()">GAME 2</button>
+
+<div class="leaderboard" id="leaderboard"></div>
+
+<div class="version">Версия 4.5</div>
+<div class="dev">Разработчик @LUNOJ</div>
+</div>
+
+<!-- GAME -->
+<div id="game">
+<div id="hud"></div>
+<img src="/static/images/tree.png" id="tree">
+<div id="basket">🧺</div>
+</div>
+
+<!-- RESULT -->
+<div id="result" class="screen">
+<div class="result-text" id="resultText"></div>
+<button onclick="backMenu()">В меню</button>
+</div>
+
+<script>
+
+let tg = window.Telegram.WebApp;
+tg.expand();
+
+let username = tg.initDataUnsafe?.user?.username || "Guest";
+document.getElementById("greet").innerText="Привет, @"+username+" 👋";
+
+/* ===== AUDIO ===== */
+const audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+
+function play(freq,d){
+let o=audioCtx.createOscillator();
+let g=audioCtx.createGain();
+o.frequency.value=freq;
+g.gain.value=0.05;
+o.connect(g); g.connect(audioCtx.destination);
+o.start(); o.stop(audioCtx.currentTime+d);
+}
+
+function clickSound(){ play(500,0.07); }
+function appleSound(){ play(750,0.1); }
+function loseSound(){ play(140,0.4); }
+
+/* ===== GAME CONTROL ===== */
+let gameInterval=null;
+let timerInterval=null;
+
+function clearGame(){
+clearInterval(gameInterval);
+clearInterval(timerInterval);
+document.querySelectorAll(".apple,.bomb").forEach(e=>e.remove());
+}
+
+/* ===== SCREENS ===== */
+function showMenu(){
+clearGame();
+document.getElementById("game").style.display="none";
+document.getElementById("result").style.display="none";
+document.getElementById("menu").style.display="flex";
+loadLeaderboard();
+}
+
+function showGame(){
+document.getElementById("menu").style.display="none";
+document.getElementById("result").style.display="none";
+document.getElementById("game").style.display="block";
+}
+
+/* ===== GAME 1 ===== */
+function startGame1(){
+clickSound();
+clearGame();
+showGame();
+document.getElementById("basket").style.display="none";
+
+let count=0;
+let start=Date.now();
+
+timerInterval=setInterval(()=>{
+let t=((Date.now()-start)/1000).toFixed(1);
+document.getElementById("hud").innerText="⏱ "+t+" | 🍎 "+count+"/10";
+},100);
+
+function spawn(){
+let a=document.createElement("div");
+a.className="apple";
+a.innerText="🍎";
+a.style.left=Math.random()*80+"%";
+a.style.top=Math.random()*60+"%";
+a.onclick=()=>{
+appleSound();
+a.classList.add("pop");
+setTimeout(()=>a.remove(),200);
+count++;
+if(count>=10){
+clearInterval(timerInterval);
+finish("МОЛОДЕЦ 💪 "+((Date.now()-start)/1000).toFixed(2)+" сек");
+}else spawn();
+};
+document.getElementById("game").appendChild(a);
+}
+spawn();
+}
+
+/* ===== GAME 2 ===== */
+let basketX=window.innerWidth/2;
+let lives,caught,goal=20;
+
+function startGame2(){
+clickSound();
+clearGame();
+showGame();
+document.getElementById("basket").style.display="block";
+
+lives=3;
+caught=0;
+updateHud();
+
+gameInterval=setInterval(spawnFalling,900);
+}
+
+function spawnFalling(){
+let isBomb=Math.random()<0.15;
+let obj=document.createElement("div");
+obj.className=isBomb?"bomb":"apple";
+obj.innerText=isBomb?"💣":"🍎";
+obj.style.left=Math.random()*90+"%";
+obj.style.top="0px";
+document.getElementById("game").appendChild(obj);
+
+let fall=setInterval(()=>{
+obj.style.top=(obj.offsetTop+5)+"px";
+
+if(obj.offsetTop>window.innerHeight-120){
+if(!isBomb){
+lives--;
+updateHud();
+if(lives<=0){loseSound();finish("Проигрыш 😢");}
+}
+obj.remove();
+clearInterval(fall);
+}
+
+let basket=document.getElementById("basket");
+basket.style.left=(basketX-basket.offsetWidth/2)+"px";
+
+let b=basket.getBoundingClientRect();
+let o=obj.getBoundingClientRect();
+
+if(o.bottom>b.top && o.left<b.right && o.right>b.left){
+if(isBomb){loseSound();finish("БОМБА 💣");}
+else{
+caught++;
+appleSound();
+updateHud();   /* <-- исправленный счетчик */
+if(caught>=goal) finish("ПОБЕДА 🏆");
+}
+obj.remove();
+clearInterval(fall);
+}
+
+},30);
+}
+
+function updateHud(){
+document.getElementById("hud").innerText="❤️ "+lives+" | 🍎 "+caught+"/"+goal;
+}
+
+/* MOVE BASKET */
+document.addEventListener("touchmove",e=>{
+basketX=e.touches[0].clientX;
+});
+document.addEventListener("mousemove",e=>{
+basketX=e.clientX;
+});
+
+/* ===== RESULT ===== */
+function finish(text){
+clearGame();
+document.getElementById("game").style.display="none";
+document.getElementById("result").style.display="flex";
+document.getElementById("resultText").innerText=text;
+}
+
+function backMenu(){
+clickSound();
+showMenu();
+}
+
+/* ===== LEADERBOARD ===== */
+function loadLeaderboard(){
+fetch("/leaderboard")
+.then(r=>r.json())
+.then(data=>{
+let html="<b>🏆 Топ игроков</b><br>";
+data.forEach((p,i)=>{
+html+=(i+1)+". @"+p[0]+" — "+p[1]+" сек<br>";
+});
+document.getElementById("leaderboard").innerHTML=html;
+});
+}
+loadLeaderboard();
+
+</script>
+
+</body>
+</html>
